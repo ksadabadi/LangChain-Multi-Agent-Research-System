@@ -1,7 +1,11 @@
 from src.agents.agents import build_search_agent, build_reader_agent, writer_chain, critic_chain
+from collections.abc import Callable
 
 
-def run_research_pipeline(topic: str) -> dict:
+def run_research_pipeline(
+    topic: str,
+    progress_callback: Callable[[dict], None] | None = None,
+) -> dict:
 
     """
     Run the research pipeline for a given topic.
@@ -13,16 +17,27 @@ def run_research_pipeline(topic: str) -> dict:
 
     state = {}
 
+    def emit(stage: str, status: str, message: str, output: str = "") -> None:
+        if progress_callback:
+            progress_callback({
+                "stage": stage,
+                "status": status,
+                "message": message,
+                "output": output,
+            })
+
     # Step 1: Use the search agent to gather research
     print("\n"+" ="*50)
     print(f"step 1 - search agent is working ...")
     print("="*50)
+    emit("search", "running", "Searching for recent, reliable sources")
     
     search_agent = build_search_agent()
     search_result = search_agent.invoke({
         "messages" : [("user", f"Find recent, reliable and detailed information about the topic: {topic}")]
     })
     state["search_result"] = search_result['messages'][-1].content
+    emit("search", "complete", "Research sources gathered", state["search_result"])
 
     print("\nsearch result: ", state["search_result"])
 
@@ -30,6 +45,7 @@ def run_research_pipeline(topic: str) -> dict:
     print("\n"+" ="*50)
     print(f"step 2 - reader agent is scraping top resources ...")
     print("="*50)
+    emit("reader", "running", "Reading the most relevant source in depth")
 
     reader_agent = build_reader_agent()
     reader_result = reader_agent.invoke({
@@ -41,6 +57,7 @@ def run_research_pipeline(topic: str) -> dict:
     })
 
     state["scraped_content"] = reader_result['messages'][-1].content
+    emit("reader", "complete", "Source content extracted", state["scraped_content"])
 
     print("\nscraped content: ", state["scraped_content"])
 
@@ -48,6 +65,7 @@ def run_research_pipeline(topic: str) -> dict:
     print("\n"+" ="*50)
     print(f"step 3 - Writer chain is drafting the report ...")
     print("="*50)
+    emit("writer", "running", "Synthesizing the research into a report")
 
     research_combined = (
                         f"SEARCH RESULTS:\n{state['search_result']} \n\n"
@@ -59,6 +77,7 @@ def run_research_pipeline(topic: str) -> dict:
         "topic" : topic,
         "research" : research_combined
     })
+    emit("writer", "complete", "Report drafted", state["report"])
 
     print("\nFinal Report\n", state["report"])
 
@@ -66,11 +85,13 @@ def run_research_pipeline(topic: str) -> dict:
     print("\n"+" ="*50)
     print(f"step 4 - Critic chain is reviewing the report ...")
     print("="*50)
+    emit("critic", "running", "Checking accuracy, structure, and clarity")
 
     state["feedback"] = critic_chain.invoke({
         "report" : state["report"]
         
     })
+    emit("critic", "complete", "Review complete", state["feedback"])
 
     print("\nCritic Report\n", state["feedback"])
 
